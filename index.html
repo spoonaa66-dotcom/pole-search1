@@ -5,22 +5,24 @@ proj4.defs("EPSG:3826","+proj=tmerc +lat_0=0 +lon_0=121 +k=0.9999 +x_0=250000 +y
 const map=L.map('map').setView([25.1,121.8],10);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);let marker;
 const poleLayer=L.markerClusterGroup({chunkedLoading:true, chunkInterval:200, chunkDelay:30});
 const lampLayer=L.markerClusterGroup({chunkedLoading:true, chunkInterval:200, chunkDelay:30});
+let mapSelected=null;
 const poleIcon=L.divIcon({className:'',html:'<div style="width:11px;height:11px;background:#2563eb;border:2px solid white;border-radius:50%;box-shadow:0 0 3px #333"></div>',iconSize:[11,11],iconAnchor:[5,5]});
 const lampIcon=L.divIcon({className:'',html:'<div style="width:11px;height:11px;background:#f59e0b;border:2px solid white;border-radius:50%;box-shadow:0 0 3px #333"></div>',iconSize:[11,11],iconAnchor:[5,5]});
 function coords(d,k){if(k==='lamp')return [Number(d.lat),Number(d.lon)];let p=proj4('EPSG:3826','EPSG:4326',[Number(d.x),Number(d.y)]);return [p[1],p[0]]}
 function addMapLayers(){
   poles.forEach(d=>{let p=coords(d,'pole');if(Number.isFinite(p[0])&&Number.isFinite(p[1])&&Math.abs(p[0])<=90&&Math.abs(p[1])<=180){
-    let label=d.pole||'電桿';L.marker(p,{icon:poleIcon}).bindPopup('<b>'+label+'</b><br>'+(d.area||'')+' '+(d.village||'')).addTo(poleLayer);
+    let label=d.pole||'電桿';L.marker(p,{icon:poleIcon}).bindPopup('<b>'+label+'</b><br>'+(d.area||'')+' '+(d.village||'')+'<br><small>點擊此標記可同步加入下方符合條件清單</small>').on('click',()=>selectFromMap(d,'pole')).addTo(poleLayer);
   }});
   lamps.forEach(d=>{let p=coords(d,'lamp');if(Number.isFinite(p[0])&&Number.isFinite(p[1])&&Math.abs(p[0])<=90&&Math.abs(p[1])<=180){
-    let label='路燈 '+(d.lamp||'');L.marker(p,{icon:lampIcon}).bindPopup('<b>'+label+'</b><br>'+(d.area||'')+' '+(d.address||'')).addTo(lampLayer);
+    let label='路燈 '+(d.lamp||'');L.marker(p,{icon:lampIcon}).bindPopup('<b>'+label+'</b><br>'+(d.area||'')+' '+(d.address||'')+'<br><small>點擊此標記可同步加入下方符合條件清單</small>').on('click',()=>selectFromMap(d,'lamp')).addTo(lampLayer);
   }});
   poleLayer.addTo(map);lampLayer.addTo(map);
   L.control.layers(null,{'🔵 電桿座標':poleLayer,'🟠 路燈座標':lampLayer},{collapsed:false}).addTo(map);
 }
 addMapLayers();
-function list(){let k=document.getElementById('kind').value,a=document.getElementById('area').value,q=document.getElementById('q').value.trim().toLowerCase(),src=k==='pole'?poles:lamps;return src.filter(d=>(a==='all'||d.area===a)&&(!q||JSON.stringify(d).toLowerCase().includes(q))).slice(0,250)}
-function render(){let k=document.getElementById('kind').value,arr=list();document.getElementById('count').textContent='符合條件 '+arr.length+' 筆（最多顯示 250 筆）';document.getElementById('results').innerHTML=arr.map((d,i)=>'<div class="item"><b>'+(k==='pole'?(d.pole||'未命名電桿'):'路燈 '+d.lamp)+'</b><small>'+(d.area||'')+'・'+(k==='pole'?(d.village||''):(d.address||''))+'</small></div>').join('');document.querySelectorAll('.item').forEach((el,i)=>el.onclick=()=>show(arr[i],k))}
+function list(){let k=document.getElementById('kind').value,a=document.getElementById('area').value,q=document.getElementById('q').value.trim().toLowerCase(),src=k==='pole'?poles:lamps;let arr=src.filter(d=>(a==='all'||d.area===a)&&(!q||JSON.stringify(d).toLowerCase().includes(q))).slice(0,250);if(mapSelected&&mapSelected.kind===k&&!arr.includes(mapSelected.data))arr.unshift(mapSelected.data);return arr}
+function render(){let k=document.getElementById('kind').value,arr=list();document.getElementById('count').textContent='符合條件 '+arr.length+' 筆'+(mapSelected&&mapSelected.kind===k?'（地圖選取項目已置頂）':'（最多顯示 250 筆）');document.getElementById('results').innerHTML=arr.map((d,i)=>'<div class="item" style="'+(mapSelected&&mapSelected.kind===k&&mapSelected.data===d?'background:#fff7d6;border-left:4px solid #f59e0b':'')+'"><b>'+(k==='pole'?(d.pole||'未命名電桿'):'路燈 '+d.lamp)+'</b><small>'+(d.area||'')+'・'+(k==='pole'?(d.village||''):(d.address||''))+'</small></div>').join('');document.querySelectorAll('.item').forEach((el,i)=>el.onclick=()=>show(arr[i],k))}
+function selectFromMap(d,k){mapSelected={data:d,kind:k};document.getElementById('kind').value=k;if(d.area&&[...document.getElementById('area').options].some(o=>o.value===d.area||o.text===d.area))document.getElementById('area').value=d.area;render();show(d,k);document.getElementById('results').scrollIntoView({behavior:'smooth',block:'nearest'});}
 function show(d,k){let p=coords(d,k);if(!Number.isFinite(p[0])||!Number.isFinite(p[1]))return;if(marker)map.removeLayer(marker);marker=L.marker(p).addTo(map).bindPopup(k==='pole'?(d.pole||'電桿'):'路燈 '+d.lamp).openPopup();map.setView(p,17);let title=k==='pole'?(d.pole||'電桿'):'路燈 '+d.lamp;document.getElementById('detail').innerHTML='<b>'+title+'</b><p>'+(d.area||'')+' '+(k==='pole'?(d.village||''):(d.address||''))+'</p><a target="_blank" href="https://www.google.com/maps/dir/?api=1&destination='+p[0]+','+p[1]+'">Google 導航</a>'}
 document.getElementById('kind').onchange=render;document.getElementById('area').onchange=render;document.getElementById('q').oninput=render;render();
 </script></body></html>
